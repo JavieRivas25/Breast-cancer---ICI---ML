@@ -62,3 +62,67 @@ def run_simulation_RL(usar_varianza=False):
         "roc_auc": roc_auc,
         "conf_matrix": cm
     }
+
+import numpy as np
+import seaborn as sns
+import matplotlib.pyplot as plt
+import os
+
+# Número de simulaciones y opción de varianza
+num_simulaciones = 100
+usar_varianza = False
+
+# Acumuladores
+metricas = {
+    "accuracy": [],
+    "precision": [],
+    "recall": [],
+    "f1": [],
+    "roc_auc": []
+}
+matrices = []
+
+# Simulaciones
+for i in range(num_simulaciones):
+    print(f"\n⚙️ Simulación {i+1}/{num_simulaciones}")
+    resultado = run_simulation_RL(usar_varianza=usar_varianza)
+
+    for k in metricas:
+        metricas[k].append(resultado[k])
+    matrices.append(resultado["conf_matrix"])
+
+# Promedios
+print(f"\n📊 Promedio de métricas tras {num_simulaciones} simulaciones:")
+for k in metricas:
+    print(f"{k.capitalize():<9}: {np.mean(metricas[k]):.4f}")
+
+# Matriz promedio
+confusion_prom = np.mean(matrices, axis=0)
+confusion_prom_rounded = np.round(confusion_prom).astype(int)
+
+# Imprimir matrices
+print("\n📌 Matriz de confusión promedio (valores exactos):")
+print(confusion_prom)
+
+print("\n📌 Matriz de confusión promedio (redondeada):")
+print(confusion_prom_rounded)
+
+# Guardar imagen
+plt.figure(figsize=(6, 5))
+sns.heatmap(confusion_prom_rounded, annot=True, fmt='d', cmap='Blues',
+            annot_kws={"size": 16},
+            xticklabels=["R", "NR"],
+            yticklabels=["R", "NR"])
+
+plt.title("Confusion Matrix - LR", fontsize=16)
+plt.xlabel("Predicted", fontsize=14)
+plt.ylabel("Actual", fontsize=14)
+plt.xticks(fontsize=12)
+plt.yticks(fontsize=12)
+plt.tight_layout()
+
+ruta_escritorio = os.path.join(os.path.expanduser("~"), "Desktop")
+plt.savefig(os.path.join(ruta_escritorio, "matriz_confusion_RL.jpg"), dpi=300)
+plt.show()
+
+print(f"\n✅ Imagen guardada como: matriz_confusion_RL.jpg en el escritorio")
