@@ -1,1 +1,64 @@
+def run_simulation_RL(usar_varianza=False):
+    import pandas as pd
+    import numpy as np
+    from sklearn.model_selection import train_test_split
+    from sklearn.preprocessing import StandardScaler
+    from sklearn.linear_model import LogisticRegression
+    from sklearn.feature_selection import VarianceThreshold
+    from sklearn.metrics import (
+        accuracy_score, precision_score, recall_score,
+        f1_score, roc_auc_score, confusion_matrix
+    )
 
+    # Rutas
+    ruta_X = r"C:\Users\javie\Desktop\Archivos de la tesis\Sistema Inmune datos\Myeloides\matriz con genes de RF 966-193.csv"
+    
+    ruta_y = r"C:\Users\javie\Desktop\respuestas de los 45 pacientes TNBC - corregido.csv"
+
+    # Cargar datos
+    X = pd.read_csv(ruta_X, index_col=0)
+    y_df = pd.read_csv(ruta_y)
+    X = X.loc[y_df['patient_id']]
+    y = y_df['respuesta'].values
+
+    # Filtrado por varianza
+    if usar_varianza:
+        selector = VarianceThreshold(threshold=0.01)
+        X_selected = selector.fit_transform(X)
+        genes_filtrados = X.columns[selector.get_support()]
+        X = pd.DataFrame(X_selected, columns=genes_filtrados, index=y_df['patient_id'])
+
+    # Escalado
+    scaler = StandardScaler()
+    X_scaled = scaler.fit_transform(X)
+
+    # División en train (70%) y test (30%)
+    rand_seed = np.random.randint(0, 10000)
+    X_train, X_test, y_train, y_test = train_test_split(
+        X_scaled, y, test_size=0.3, random_state=rand_seed, stratify=y)
+
+    # Entrenamiento
+    modelo_l1 = LogisticRegression(
+        penalty='l1', solver='saga', C=1.3924311715583757, max_iter=7000, random_state=25)
+    modelo_l1.fit(X_train, y_train)
+
+    # Predicciones
+    y_test_pred = modelo_l1.predict(X_test)
+    y_test_proba = modelo_l1.predict_proba(X_test)[:, 1]
+
+    # Métricas globales
+    acc = accuracy_score(y_test, y_test_pred)
+    prec = precision_score(y_test, y_test_pred, zero_division=0)
+    rec = recall_score(y_test, y_test_pred, zero_division=0)
+    f1 = f1_score(y_test, y_test_pred, zero_division=0)
+    roc_auc = roc_auc_score(y_test, y_test_proba)
+    cm = confusion_matrix(y_test, y_test_pred, labels=[1, 0])
+
+    return {
+        "accuracy": acc,
+        "precision": prec,
+        "recall": rec,
+        "f1": f1,
+        "roc_auc": roc_auc,
+        "conf_matrix": cm
+    }
