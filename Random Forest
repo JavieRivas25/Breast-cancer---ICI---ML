@@ -1,0 +1,198 @@
+# ==========================
+# BLOQUE 1: CARGA DE DATOS (45 PACIENTES TNBC)
+# ==========================
+
+import pandas as pd
+import numpy as np
+from sklearn.preprocessing import StandardScaler
+from sklearn.model_selection import train_test_split
+
+# 📌 Nuevas rutas
+#ruta_X = r"C:\Users\javie\Desktop\Archivos de la tesis\Tcell datos\Matriz de expresiones en Tcell 45 pacientes.csv"
+ruta_X = r"C:\Users\javie\Desktop\Archivos de la tesis\Sistema Inmune datos\Myeloides\Matriz de expresiones en Myeloid 45 pacientes.csv"
+ruta_y = r"C:\Users\javie\Desktop\Archivos de la tesis\Listas de genes de los datasets\Todos los pacientes TNBC\Expresion genica TNBC\respuestas de los 45 pacientes TNBC.csv"
+
+# 1. Cargar los datos
+X_df = pd.read_csv(ruta_X)
+y_df = pd.read_csv(ruta_y)
+
+# 2. Extraer X e y
+X = X_df.iloc[:, 1:].values  # ignoramos la columna 'paciente'
+y = y_df['respuesta'].values.astype(int)  # ya deben estar como 0 y 1
+
+# 3. Escalado opcional
+aplicar_scaler = False
+
+if aplicar_scaler:
+    scaler = StandardScaler()
+    X_scaled = scaler.fit_transform(X)
+else:
+    X_scaled = X
+
+# 4. División estratificada
+X_temp, X_test, y_temp, y_test = train_test_split(
+    X_scaled, y, test_size=0.3, stratify=y, random_state=199)
+
+X_train, X_val, y_train, y_val = train_test_split(
+    X_temp, y_temp, test_size=0.2, stratify=y_temp, random_state=42)
+
+# 5. Confirmación
+print("Tamaños de los conjuntos:")
+print("Train:", X_train.shape)
+print("Val:  ", X_val.shape)
+print("Test: ", X_test.shape)
+print("Distribución en y_test:", np.bincount(y_test))
+
+###################################################################################################################
+# ==========================
+# BLOQUE 2: ENTRENAMIENTO DEL RANDOM FOREST
+# ==========================
+
+from sklearn.ensemble import RandomForestClassifier
+
+# Inicializar el modelo
+rf_model = RandomForestClassifier(
+    n_estimators=193,
+    class_weight='balanced',
+    max_features=31,  # <--- Aquí defines cuántos genes evaluar por nodo
+    random_state=25,
+    n_jobs=-1  # Utiliza todos los núcleos disponibles
+)
+
+# Entrenar el modelo
+rf_model.fit(X_train, y_train)
+
+# Verificar entrenamiento
+print("Modelo entrenado correctamente con", len(rf_model.estimators_), "árboles.")
+###############################################################################################################
+# ==========================
+# BLOQUE 3: EVALUACIÓN DEL MODELO BINARIO (TNBC, TP ARRIBA IZQ.)
+# ==========================
+
+from sklearn.metrics import accuracy_score, classification_report, confusion_matrix
+import matplotlib.pyplot as plt
+import seaborn as sns
+
+def evaluar_modelo_binario(modelo, X, y, conjunto_nombre):
+    # Predicción
+    y_pred = modelo.predict(X)
+
+    # Métricas
+    print(f"\n🔍 Resultados en el conjunto de {conjunto_nombre}:")
+    print("Accuracy:", accuracy_score(y, y_pred))
+    print("\nClassification Report:")
+    print(classification_report(
+        y, y_pred,
+        target_names=["No Respondedor", "Respondedor"],
+        zero_division=0
+    ))
+
+    # Matriz de confusión con clase positiva primero (1 = Respondedor)
+    cm = confusion_matrix(y, y_pred, labels=[1, 0])
+
+    # Visualización
+    plt.figure(figsize=(5, 4))
+    sns.heatmap(
+        cm,
+        annot=True,
+        fmt='d',
+        cmap='Blues',
+        xticklabels=["Respondedor", "No Respondedor"],
+        yticklabels=["Respondedor", "No Respondedor"]
+    )
+    plt.xlabel('Predicción')
+    plt.ylabel('Real')
+    plt.title(f'Matriz de Confusión - {conjunto_nombre}')
+    plt.tight_layout()
+    plt.show()
+
+# Ejecutar en validación y test
+evaluar_modelo_binario(rf_model, X_val, y_val, "Validación")
+evaluar_modelo_binario(rf_model, X_test, y_test, "Test")
+
+############################################################################################################
+# ==========================
+# BLOQUE 4: IMPORTANCIA DE GENES - TNBC
+# ==========================
+
+import pandas as pd
+import os
+import matplotlib.pyplot as plt
+import seaborn as sns
+
+# Ruta al Escritorio (por si no estaba definida antes)
+desktop = os.path.join(os.path.expanduser("~"), "Desktop")
+
+# Obtener los nombres de los genes (ignoramos la columna 'paciente')
+genes = X_df.columns[1:]
+
+# Extraer las importancias del modelo entrenado
+importancias = rf_model.feature_importances_
+
+# Crear DataFrame con los genes y su importancia
+df_importancia = pd.DataFrame({
+    'Gen': genes,
+    'Importancia': importancias
+})
+
+# Ordenar de mayor a menor importancia
+df_importancia = df_importancia.sort_values(by='Importancia', ascending=False).reset_index(drop=True)
+
+# Visualizar los top 20 genes más importantes
+top_n = 20
+plt.figure(figsize=(10, 6))
+sns.barplot(x='Importancia', y='Gen', data=df_importancia.head(top_n), palette='crest')
+plt.title(f'Top {top_n} genes más importantes (Random Forest - TNBC)')
+plt.tight_layout()
+# Guardar en el Escritorio
+plt.savefig(os.path.join(desktop, "genprincRF.jpg"), format='jpg', dpi=300)
+plt.show()
+
+# (Opcional) Guardar el ranking completo
+# df_importancia.to_csv("importancia_genes_RF_TNBC.csv", index=False)
+
+
+# ==========================
+# BLOQUE 5: CURVA ROC BINARIA - TNBC
+# ==========================
+
+from sklearn.metrics import roc_curve, auc
+
+# Obtener las probabilidades del modelo para la clase positiva (respondedor = 1)
+y_score = rf_model.predict_proba(X_test)[:, 1]
+
+# Calcular FPR, TPR y AUC
+fpr, tpr, thresholds = roc_curve(y_test, y_score)
+roc_auc = auc(fpr, tpr)
+
+# Visualizar la curva ROC
+plt.figure(figsize=(8, 6))
+plt.plot(fpr, tpr, color='darkorange', lw=2, label=f'AUC = {roc_auc:.2f}')
+plt.plot([0, 1], [0, 1], color='gray', linestyle='--')  # línea aleatoria
+plt.xlabel('Tasa de Falsos Positivos (FPR)')
+plt.ylabel('Tasa de Verdaderos Positivos (TPR)')
+plt.title('Curva ROC - Random Forest (TNBC)')
+plt.legend(loc='lower right')
+plt.grid(True)
+plt.tight_layout()
+plt.show()
+######################################################################################################
+#para guardar la lista de genes segun feature importance
+import pandas as pd
+
+# Número de genes que deseas guardar
+top_n =400
+
+# Asegúrate de que este DataFrame ya esté definido antes
+# df_importancia = pd.DataFrame({'Gen': genes, 'Importancia': rf_model.feature_importances_})
+
+# Ordenar y tomar los top N genes
+df_topN_rf = df_importancia.sort_values(by='Importancia', ascending=False).head(top_n)
+
+# Ruta donde guardar el archivo (escritorio)
+ruta_salida = r"C:\Users\javie\Desktop\Archivos de la tesis\Sistema Inmune datos\Myeloides\top_genes_RF193.csv"
+
+# Guardar
+df_topN_rf.to_csv(ruta_salida, index=False)
+
+print(f"✅ Archivo guardado en: {ruta_salida}")

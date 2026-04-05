@@ -1,0 +1,114 @@
+def run_simulation_SVM():
+    import pandas as pd
+    import numpy as np
+    from sklearn.model_selection import train_test_split
+    from sklearn.preprocessing import StandardScaler
+    from sklearn.svm import SVC
+    from sklearn.metrics import (
+        accuracy_score, precision_score, recall_score,
+        f1_score, roc_auc_score, confusion_matrix
+    )
+
+    # Cargar datos
+    ruta_X = r"C:\Users\javie\Desktop\Archivos de la tesis\Sistema Inmune datos\Myeloides\matriz con genes de RF 966-193.csv"
+    ruta_y = r"C:\Users\javie\Desktop\respuestas de los 45 pacientes TNBC - corregido.csv"
+    X = pd.read_csv(ruta_X, index_col=0)
+    y = pd.read_csv(ruta_y, index_col=0)['respuesta']
+    
+    # Escalar
+    scaler = StandardScaler()
+    X_scaled = scaler.fit_transform(X)
+
+    # División aleatoria estratificada (70% train, 30% test)
+    seed = np.random.randint(0, 10000)
+    X_train, X_test, y_train, y_test = train_test_split(
+        X_scaled, y, test_size=0.3, random_state=seed, stratify=y)
+
+    # Entrenar modelo SVM con hiperparámetros definidos
+    C =  14.277997447846854 #C bajo: permite más errores, da un margen más ancho (más generalización). uno alto es menor tolerancia a error
+    gamma = 0.0001141946084297433 #Un gamma alto haría que el modelo se enfoque excesivamente en puntos cercanos → sobreajuste.
+    modelo = SVC(kernel='rbf', C=C, gamma=gamma, class_weight='balanced',
+                 probability=True, random_state=seed)
+    modelo.fit(X_train, y_train)
+
+    # Evaluación en test
+    y_pred_test = modelo.predict(X_test)
+    y_prob_test = modelo.predict_proba(X_test)[:, 1]
+
+    acc = accuracy_score(y_test, y_pred_test)
+    prec = precision_score(y_test, y_pred_test, zero_division=0)
+    rec = recall_score(y_test, y_pred_test, zero_division=0)
+    f1 = f1_score(y_test, y_pred_test, zero_division=0)
+    auc = roc_auc_score(y_test, y_prob_test)
+    cm = confusion_matrix(y_test, y_pred_test, labels=[1, 0])
+
+    return {
+        "accuracy": acc,
+        "precision": prec,
+        "recall": rec,
+        "f1": f1,
+        "roc_auc": auc,
+        "conf_matrix": cm
+    }
+
+import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
+import os
+
+# Número de simulaciones
+num_simulaciones = 100
+
+# Inicializar almacenamiento de métricas
+metricas = {
+    "accuracy": [],
+    "precision": [],
+    "recall": [],
+    "f1": [],
+    "roc_auc": []
+}
+matrices = []
+
+# Ejecutar simulaciones
+for i in range(num_simulaciones):
+    print(f"\n⚙️ Simulación {i+1}/{num_simulaciones}")
+    res = run_simulation_SVM()
+
+    for k in metricas:
+        metricas[k].append(res[k])
+    matrices.append(res["conf_matrix"])
+
+# Mostrar métricas promedio
+print(f"\n📊 Promedio de métricas tras {num_simulaciones} simulaciones:")
+for k in metricas:
+    print(f"{k.capitalize():<9}: {np.mean(metricas[k]):.4f}")
+
+# Calcular matriz de confusión promedio
+confusion_prom = np.mean(matrices, axis=0)
+confusion_prom_rounded = np.round(confusion_prom).astype(int)
+
+print("\n📌 Matriz de confusión promedio (valores exactos):")
+print(confusion_prom)
+
+print("\n📌 Matriz de confusión promedio (redondeada):")
+print(confusion_prom_rounded)
+
+# Visualizar y guardar matriz de confusión promedio
+plt.figure(figsize=(6, 5))
+sns.heatmap(confusion_prom_rounded, annot=True, fmt='d', cmap='Blues',
+            annot_kws={"size": 16},
+            xticklabels=["R", "NR"],
+            yticklabels=["R", "NR"])
+plt.title("Confusion Matrix - SVM", fontsize=16)
+plt.xlabel("Predicted", fontsize=14)
+plt.ylabel("Actual", fontsize=14)
+plt.xticks(fontsize=12)
+plt.yticks(fontsize=12)
+plt.tight_layout()
+
+# Guardar imagen en el escritorio
+ruta_escritorio = os.path.join(os.path.expanduser("~"), "Desktop")
+plt.savefig(os.path.join(ruta_escritorio, "matriz_confusion_SVM.jpg"), dpi=300)
+plt.show()
+
+print(f"\n✅ Imagen guardada como: matriz_confusion_SVM.jpg en el escritorio")
